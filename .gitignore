@@ -97,3 +97,7 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# secrets
+pat_token.py
+webhook_secret.py
