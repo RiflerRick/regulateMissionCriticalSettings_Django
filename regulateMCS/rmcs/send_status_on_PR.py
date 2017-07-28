@@ -12,6 +12,7 @@ import json
 PAT_TOKEN = pat_token.TOKEN
 
 
+# TODO: exception handling for errors on status update
 def send(status, repo_login, repo_name, head_sha_hash, stat_string):
     headers = {
         "Authorization" : "token " + PAT_TOKEN

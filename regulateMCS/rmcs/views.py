@@ -10,6 +10,7 @@ WARNINGS:
     commit will be commented.
     - If a webhook is redelivered from the admin, duplicate comments are created
     on the PR page.
+    - If an owner.txt file is added, that file should be included in the top level directory.
 
 Comment on PR page must contain the following details:
     - Who created the PR
@@ -17,33 +18,83 @@ Comment on PR page must contain the following details:
 """
 # TODO: extend support for regex on filepaths
 from django.http import HttpResponse
+# from django.http import HttpRequest
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 
-
-import sys
+import sys, os
 import thread
 import traceback
 import requests
 import hashlib, hmac
+import json
+import base64
 
 
 import create_comment_on_PR as createComment
 import send_status_on_PR as sendStatus
 
-# ------------------------------------configs and secrets--------------------------
+# ------------------------------------configs and secrets--------------------------------
 import mcs_config
 import webhook_secret
 
 # RETURN_MSG = "Meliora cogito #DBL"
 RETURN_MSG = "auf weidersehen"
 DIR_ITEM_SET = set(mcs_config.DIRS)
+OWNER_FILE_NAME = "CODEOWNERS"
+INTIMATE_OWNERS = False
 
 
-@require_http_methods(["GET"])
 def index(request):
     return HttpResponse("Hi, welcome to the PR_Regulation. If you were looking for something here,"
                         " i am  afraid there is nothing...")
 
+
+def attempt_to_get_owner_file(repo_login, repo_name, filepath, branch):
+    """
+    attempt to find an owner.txt file from the top level directory. assuming that the top level
+    directory is the directory to where we are required to check for owner.txt
+
+    - WARNING: Note that the contents of the file are encoded in base64 format so it is essential
+    to decode it. If the format of encoding is something else then it will raise an error
+
+    :param filepath: filepath to the edited file in a corresponding commit
+    :return:
+    """
+    top_level_dir = filepath.split('/')
+    if len(top_level_dir) == 1:
+        # it means we are looking at one file
+        return -1
+    else:
+        filepath = top_level_dir[0]
+        filepath = os.path.join(filepath, OWNER_FILE_NAME)
+
+    parameters = "?ref=" + branch
+    url = os.path.join("https://api.github.com", "repos", repo_login, repo_name, "contents", filepath)
+    url += parameters
+    r = requests.get(url)
+    response = r.json()
+    try:
+        if response["message"] == "Not Found":
+            return -1
+    except KeyError:
+        if response["encoding"] != "base64":
+            raise Exception("encoding in response was not base64")
+
+        content = response["content"]
+        decoded_content = base64.b64decode(content)
+        decoded_content = decoded_content.replace('\n', ',')
+        return decoded_content
+
+
+def get_base_branch(payload):
+    """
+    gets the ref of the base branch.
+
+    :param payload: payload from webhook
+    :return:
+    """
+    return payload["pull_request"]["base"]["ref"]
 
 
 def get_author(commit):
@@ -54,6 +105,7 @@ def get_author(commit):
     :return: author name
     """
     return commit["commit"]["author"]["name"]
+
 
 def get_committer(commit):
     """
@@ -83,7 +135,8 @@ def get_repo_owner(payload):
     :return: return tuple of login and name of repo owner
     """
     r = requests.get(payload["repository"]["owner"]["url"])
-    return (r.json()["login"], r.json()["name"])
+    # print r.json()
+    return r.json()["login"], r.json()["name"]
 
 
 def get_repo_name(payload):
@@ -174,7 +227,7 @@ def get_position_to_comment(file):
         num_of_lines = int(postimage.split(',')[1])
         print num_of_lines
 
-    return int(postimage_start_line) + num_of_lines
+    return int(postimage_start_line) + num_of_lines - 1
 
 
 def get_head_sha_hash(payload):
@@ -187,7 +240,7 @@ def get_head_sha_hash(payload):
     return payload["pull_request"]["head"]["sha"]
 
 
-def process_payload(thread_name, parsed_json):
+def process_payload(thread_name, parsed_json, logging_file):
     """
     process the json payload
 
@@ -195,7 +248,17 @@ def process_payload(thread_name, parsed_json):
     :param parsed_json:
     :return:
     """
+    # DEBUG: logging
+    logging_file.write(str(parsed_json))
 
+    # initializations
+    owners = ""
+    owners_in_dir = []
+    repo_name = ""
+    repo_login = ""
+    pr_head_branch = ""
+    repo_owner = ""
+    head_sha_hash = ""
     try:
         repo_name = get_repo_name(parsed_json)
 
@@ -203,6 +266,7 @@ def process_payload(thread_name, parsed_json):
             return RETURN_MSG
 
         pr_head_branch = get_head_branch(parsed_json)
+        pr_base_branch = get_base_branch(parsed_json)
 
         if pr_head_branch not in mcs_config.BRANCHES:
             return RETURN_MSG
@@ -210,7 +274,7 @@ def process_payload(thread_name, parsed_json):
         repo_login, repo_owner = get_repo_owner(parsed_json)
         head_sha_hash = get_head_sha_hash(parsed_json)
         # intimating that a check is already on the way
-        sendStatus.send(-1, repo_login=repo_login, repo_name=repo_name, \
+        sendStatus.send(-1, repo_login=repo_login, repo_name=repo_name,
                         head_sha_hash=head_sha_hash, stat_string="pending")
 
         pr_number = get_PR_number(parsed_json)
@@ -229,22 +293,42 @@ def process_payload(thread_name, parsed_json):
             files = get_files_changed(commit)
             for file in files:
 
+
+
                 filepath = get_file_path(file)
 
+                print filepath
+
                 dir_items = set(filepath.split('/'))
+
+                print dir_items.intersection(DIR_ITEM_SET)
 
                 if dir_items.intersection(DIR_ITEM_SET):
                     # this is the crucial check to confirm that we are checking in the
                     # same directory that is configured
 
                     # WARNING: fails if the directory name is also a file name that is edited
+                    if INTIMATE_OWNERS == True and dir_items not in owners_in_dir:
+                        # optimization to prevent api calls to get contents of
+                        # owners file for each and every filepath
+                        owners_in_dir.append(dir_items)
+                        r = attempt_to_get_owner_file(repo_login, repo_name, filepath,
+                                                      pr_base_branch)
+                        if r == -1:
+                            # it means the filepath has only one file or the owners.txt file
+                            # does not exist
+                            pass
+                        else:
+                            owners = r
 
                     comment_position = get_position_to_comment(file)
                     createComment.create(
                         repo_name, repo_login, repo_owner, pr_number, author, committer,\
-                        commit_id, filepath, comment_position)
+                        commit_id, filepath, comment_position, owners)
 
         sendStatus.send(0, repo_login, repo_name, head_sha_hash, "success")
+        logging_file.close()
+        print "success"
 
     except Exception:
         # sending non-zero exit code for failure
@@ -253,6 +337,7 @@ def process_payload(thread_name, parsed_json):
 
 
 def authenticate(body, hash):
+    # print "{} and {}".format(body, hash)
     secret = webhook_secret.SECRET
     # github uses both the secret and the payload to authenticate
     h = hmac.new(secret, body, hashlib.sha1)
@@ -264,25 +349,33 @@ def authenticate(body, hash):
         return False
 
 
-@require_http_methods(["POST"])
+@csrf_exempt
 def github_webhook_handler(request):
+    if request.method != "POST":
+        return HttpResponse("Go to hell!!!")
 
-    if request.is_json:
+    headers = request.META
+
+    if request.content_type == "application/json":
         print "request is json"
-        parsed_json = request.json
+        parsed_json = json.loads(request.body)
+        # print "json_parsed"
+        # print "headers: {}".format(headers)
         try:
-            if not authenticate(request.data, request.headers.get("X-Hub-Signature")):
-                return "Go to hell!!!"
-            if request.headers["X-Github-Event"] != "pull_request":
-                return "Not a pr"
+            if not authenticate(str(request.body), headers.get("HTTP_X_HUB_SIGNATURE")):
+                return HttpResponse("Go to hell!!!")
+            if headers.get("HTTP_X_GITHUB_EVENT") != "pull_request":
+                return HttpResponse("Not a pr")
         except Exception:
-            return "Secret not defined..."
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            traceback.print_exception(exc_type, exc_val, exc_tb)
+            return HttpResponse("Secret not defined...")
         # start a new thread for processing json so that webhook does not timeout.
-        thread.start_new_thread(process_payload, ("payload_thread", parsed_json))
-
+        f = open("payload_log.log", "w+")
+        thread.start_new_thread(process_payload, ("payload_thread", parsed_json, f))
     else:
         print "request is not json"
-        return "request was not json, please configure the payload as json"
+        return HttpResponse("request was not json, please configure the payload as json")
 
-    return RETURN_MSG
+    return HttpResponse(RETURN_MSG)
 

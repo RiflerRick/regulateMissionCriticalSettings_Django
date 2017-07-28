@@ -7,7 +7,7 @@ import os
 import json
 PAT_TOKEN = pat_token.TOKEN
 
-def create(repo_name, repo_login, repo_owner, pr_number, author, committer, commit_id, filepath, comment_position):
+def create(repo_name, repo_login, repo_owner, pr_number, author, committer, commit_id, filepath, comment_position, owners):
     """
     sends request for PR page comment to github api
     """
@@ -26,8 +26,10 @@ def create(repo_name, repo_login, repo_owner, pr_number, author, committer, comm
     headers = {
         "Authorization" : "token " + PAT_TOKEN
     }
-
-    msg = committer + " committed on a restricted repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author +" in the file " + filepath
+    if owners != "":
+        msg = committer + " committed on a restricted repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: " + "@" + owners
+    else:
+        msg = committer + " committed on a restricted repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: no owner file found"
 
     payload = {
         "body" : msg,
@@ -35,6 +37,19 @@ def create(repo_name, repo_login, repo_owner, pr_number, author, committer, comm
         "path" : filepath,
         "position" : comment_position
     }
-    print "url" + url
+    print "url: " + url
+    print "payload: "
+    print payload
     r = requests.post(url, headers= headers, data=json.dumps(payload))
+    response = r.json()
+    if response.has_key("message") == False:
+        pass
+    else:
+        f = open("comment_api_response.log", "w+")
+        f.write(json.dumps(r.json(), indent=4, separators=(',', ': ')))
+        f.close()
+        raise Exception("commenting failed: " + str(response.get("errors")))
     # print json.dumps(r.json(), indent=4, separators=(',', ': '))
+    f = open("comment_api_response.log", "w+")
+    f.write(json.dumps(r.json(), indent=4, separators=(',', ': ')))
+    f.close()
