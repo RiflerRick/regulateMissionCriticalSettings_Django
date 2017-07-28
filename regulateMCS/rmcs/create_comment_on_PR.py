@@ -7,7 +7,7 @@ import os
 import json
 PAT_TOKEN = pat_token.TOKEN
 
-def create(repo_name, repo_login, repo_owner, pr_number, author, committer, commit_id, filepath, comment_position, owners):
+def create(repo_name, repo_login, repo_owner, pr_number, author, committer, commit_id, filepath, comment_position, owners, collaborators):
     """
     sends request for PR page comment to github api
     """
@@ -27,9 +27,9 @@ def create(repo_name, repo_login, repo_owner, pr_number, author, committer, comm
         "Authorization" : "token " + PAT_TOKEN
     }
     if owners != "":
-        msg = committer + " committed on a restricted directory: " + filepath + " in the repository: " + repo_name + "belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: " + "@" + owners
+        msg = committer + " committed on a restricted directory: " + filepath + " in the repository: " + repo_name + "belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: " + "@" + owners + "\nCollaborators: " + collaborators
     else:
-        msg = committer + " committed on a restricted directory: " + filepath + "in the repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: no owner file found"
+        msg = committer + " committed on a restricted directory: " + filepath + "in the repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: no owner file found\n Collaborators: " + collaborators
 
     payload = {
         "body" : msg,

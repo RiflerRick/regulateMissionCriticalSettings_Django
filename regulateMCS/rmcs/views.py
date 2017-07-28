@@ -37,8 +37,10 @@ import send_status_on_PR as sendStatus
 # ------------------------------------configs and secrets--------------------------------
 import mcs_config
 import webhook_secret
+import pat_token
 
 # RETURN_MSG = "Meliora cogito #DBL"
+PAT_TOKEN = pat_token.TOKEN
 RETURN_MSG = "auf weidersehen"
 DIR_ITEM_SET = set(mcs_config.DIRS)
 OWNER_FILE_NAME = "CODEOWNERS"
@@ -94,6 +96,28 @@ def attempt_to_get_owner_file(repo_login, repo_name, filepath, branch):
                 reviewers = reviewers_list.replace(' ', ',')
 
         return reviewers
+
+
+def get_collabortors(payload):
+    """
+    gets the collaborators of the base repository
+
+    :param payload:
+    :return:
+    """
+    collaborators = ""
+    collaborator_url = os.path.join(payload["pull_request"]["base"]["repo"]["url"],
+                                    "collaborators")
+    headers = {
+        "Authorization": "token " + PAT_TOKEN
+    }
+    r = requests.get(collaborator_url, headers = headers)
+    response  = r.json()
+    for collaborator in response:
+        print collaborator
+        collaborators += '@'+ collaborator["login"] + ", "
+    return collaborators
+
 
 
 def get_base_branch(payload):
@@ -287,6 +311,7 @@ def process_payload(thread_name, parsed_json, logging_file):
                         head_sha_hash=head_sha_hash, stat_string="pending")
 
         pr_number = get_PR_number(parsed_json)
+        collaborators = get_collabortors(parsed_json)
 
         # print head_sha_hash + "," + repo_login + "," + repo_owner + "," + pr_number
         # now there will be a check on the commits in and if in any commit a file
@@ -333,7 +358,7 @@ def process_payload(thread_name, parsed_json, logging_file):
                     comment_position = get_position_to_comment(file)
                     createComment.create(
                         repo_name, repo_login, repo_owner, pr_number, author, committer,\
-                        commit_id, filepath, comment_position, owners)
+                        commit_id, filepath, comment_position, owners, collaborators)
 
         sendStatus.send(0, repo_login, repo_name, head_sha_hash, "success")
         logging_file.close()
