@@ -10,7 +10,7 @@ WARNINGS:
     commit will be commented.
     - If a webhook is redelivered from the admin, duplicate comments are created
     on the PR page.
-    - If an owner.txt file is added, that file should be included in the top level directory.
+    - If an owners.txt file is added, that file should be included in the top level directory.
 
 Comment on PR page must contain the following details:
     - Who created the PR
@@ -42,6 +42,8 @@ import webhook_secret
 RETURN_MSG = "auf weidersehen"
 DIR_ITEM_SET = set(mcs_config.DIRS)
 OWNER_FILE_NAME = "CODEOWNERS"
+# WARNING: the regex matching portion of the method to check for code owners is buggy. Please
+# review and edit it before toggling INTIMATE_OWNERS
 INTIMATE_OWNERS = False
 
 
@@ -52,7 +54,7 @@ def index(request):
 
 def attempt_to_get_owner_file(repo_login, repo_name, filepath, branch):
     """
-    attempt to find an owner.txt file from the top level directory. assuming that the top level
+    attempt to find the CODEOWNERS file from the top level directory. assuming that the top level
     directory is the directory to where we are required to check for owner.txt
 
     - WARNING: Note that the contents of the file are encoded in base64 format so it is essential
@@ -61,16 +63,14 @@ def attempt_to_get_owner_file(repo_login, repo_name, filepath, branch):
     :param filepath: filepath to the edited file in a corresponding commit
     :return:
     """
-    top_level_dir = filepath.split('/')
-    if len(top_level_dir) == 1:
-        # it means we are looking at one file
-        return -1
-    else:
-        filepath = top_level_dir[0]
-        filepath = os.path.join(filepath, OWNER_FILE_NAME)
+    import re
+    owner_filepath = ""
+    reviewers = ""
+
+    owner_filepath = os.path.join(OWNER_FILE_NAME)
 
     parameters = "?ref=" + branch
-    url = os.path.join("https://api.github.com", "repos", repo_login, repo_name, "contents", filepath)
+    url = os.path.join("https://api.github.com", "repos", repo_login, repo_name, "contents", owner_filepath)
     url += parameters
     r = requests.get(url)
     response = r.json()
@@ -83,8 +83,17 @@ def attempt_to_get_owner_file(repo_login, repo_name, filepath, branch):
 
         content = response["content"]
         decoded_content = base64.b64decode(content)
-        decoded_content = decoded_content.replace('\n', ',')
-        return decoded_content
+        decoded_content = decoded_content.split('\n')
+        for line in decoded_content:
+            if line[0] == "#":
+                continue
+            line = line.split('\t')
+            filepath_regex = line[0]
+            if re.match(filepath_regex, filepath): # this line is buggy
+                reviewers_list = line[1]
+                reviewers = reviewers_list.replace(' ', ',')
+
+        return reviewers
 
 
 def get_base_branch(payload):
@@ -176,7 +185,7 @@ def get_commit_id(commit):
     """
     Gets the commit ids of the PR
 
-    :param payload: payload from the webhook
+    :param commit: payload from the webhook
     :return: commit hash list
     """
     return commit["sha"]
@@ -209,7 +218,7 @@ def get_position_to_comment(file):
     gets line number to comment. Note that here we are only interested in getting the post image
     line number of the git diff.
 
-    :param payload: payload from the webhook
+    :param file: payload from the webhook
     :return: line number
         """
     patch = file["patch"]
