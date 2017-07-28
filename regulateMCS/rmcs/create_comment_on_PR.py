@@ -27,9 +27,9 @@ def create(repo_name, repo_login, repo_owner, pr_number, author, committer, comm
         "Authorization" : "token " + PAT_TOKEN
     }
     if owners != "":
-        msg = committer + " committed on a restricted repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: " + "@" + owners
+        msg = committer + " committed on a restricted directory: " + filepath + " in the repository: " + repo_name + "belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: " + "@" + owners
     else:
-        msg = committer + " committed on a restricted repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: no owner file found"
+        msg = committer + " committed on a restricted directory: " + filepath + "in the repository: " + repo_name + " belonging to " + repo_owner + "(" + repo_login + ")" + " authored by " + "@" + author + " in the file " + filepath + "\nOwners: no owner file found"
 
     payload = {
         "body" : msg,
