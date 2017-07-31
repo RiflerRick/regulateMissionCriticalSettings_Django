@@ -41,7 +41,7 @@ import pat_token
 
 # RETURN_MSG = "Meliora cogito #DBL"
 PAT_TOKEN = pat_token.TOKEN
-RETURN_MSG = "auf weidersehen"
+RETURN_MSG = "Ahem!!!"
 DIR_ITEM_SET = set(mcs_config.DIRS)
 OWNER_FILE_NAME = "CODEOWNERS"
 # WARNING: the regex matching portion of the method to check for code owners is buggy. Please
@@ -112,7 +112,7 @@ def get_collabortors(payload):
         "Authorization": "token " + PAT_TOKEN
     }
     r = requests.get(collaborator_url, headers = headers)
-    response  = r.json()
+    response = r.json()
     for collaborator in response:
         print collaborator
         collaborators += '@'+ collaborator["login"] + ", "
@@ -250,7 +250,6 @@ def get_position_to_comment(file):
     patch = patch[1].split(' ')
     preimage = patch[1]
     postimage = patch[2]
-    # preimage_start_line = preimage.split(',')[0]
     postimage_start_line = postimage.split(',')[0]
     num_of_lines = 0
     if len(postimage.split(',')) == 1:
@@ -268,12 +267,12 @@ def get_head_sha_hash(payload):
     gets the head sha hash
 
     :param payload: payload from webhook
-    :return: line number
+    :return: payload head sha
     """
     return payload["pull_request"]["head"]["sha"]
 
 
-def process_payload(thread_name, parsed_json, logging_file):
+def process_payload(thread_name, parsed_json):
     """
     process the json payload
 
@@ -282,6 +281,7 @@ def process_payload(thread_name, parsed_json, logging_file):
     :return:
     """
     # DEBUG: logging
+    logging_file = open("payload_log.log", "w+")
     logging_file.write(str(parsed_json))
 
     # initializations
@@ -326,8 +326,6 @@ def process_payload(thread_name, parsed_json, logging_file):
             commit_id = get_commit_id(commit)
             files = get_files_changed(commit)
             for file in files:
-
-
 
                 filepath = get_file_path(file)
 
@@ -386,7 +384,7 @@ def authenticate(body, hash):
 @csrf_exempt
 def github_webhook_handler(request):
     if request.method != "POST":
-        return HttpResponse("Go to hell!!!")
+        return HttpResponse("Go to hell!!!", status=403)
 
     headers = request.META
 
@@ -397,19 +395,25 @@ def github_webhook_handler(request):
         # print "headers: {}".format(headers)
         try:
             if not authenticate(str(request.body), headers.get("HTTP_X_HUB_SIGNATURE")):
-                return HttpResponse("Go to hell!!!")
+                return HttpResponse("Go to hell!!!", status=403)
             if headers.get("HTTP_X_GITHUB_EVENT") != "pull_request":
-                return HttpResponse("Not a pr")
+                return HttpResponse("Not a pr", status=403)
         except Exception:
             exc_type, exc_val, exc_tb = sys.exc_info()
             traceback.print_exception(exc_type, exc_val, exc_tb)
-            return HttpResponse("Secret not defined...")
+            return HttpResponse("Secret not defined...", status=403)
         # start a new thread for processing json so that webhook does not timeout.
-        f = open("payload_log.log", "w+")
-        thread.start_new_thread(process_payload, ("payload_thread", parsed_json, f))
+
+        try:
+            thread.start_new_thread(process_payload, ("payload_thread", parsed_json))
+        except Exception:
+            print "could not start the thread"
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            traceback.print_exception(exc_type, exc_val, exc_tb)
+            return HttpResponse("An error was encountered in the server", status=500)
     else:
         print "request is not json"
-        return HttpResponse("request was not json, please configure the payload as json")
+        return HttpResponse("request was not json, please configure the payload as json", status=403)
 
     return HttpResponse(RETURN_MSG)
 

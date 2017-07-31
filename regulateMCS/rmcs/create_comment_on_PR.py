@@ -38,8 +38,8 @@ def create(repo_name, repo_login, repo_owner, pr_number, author, committer, comm
         "position" : comment_position
     }
     print "url: " + url
-    print "payload: "
-    print payload
+    # print "payload: "
+    # print payload
     r = requests.post(url, headers= headers, data=json.dumps(payload))
     response = r.json()
     if response.has_key("message") == False:

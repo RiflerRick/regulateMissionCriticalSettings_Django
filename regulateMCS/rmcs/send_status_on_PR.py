@@ -42,7 +42,7 @@ def send(status, repo_login, repo_name, head_sha_hash, stat_string):
     else:
         
         payload["state"] = "pending"
-        payload["descirption"] = "Still processing"
+        payload["description"] = "Still processing"
         
     url = os.path.join("https://api.github.com/repos", repo_login, repo_name, "statuses",\
                        head_sha_hash)
