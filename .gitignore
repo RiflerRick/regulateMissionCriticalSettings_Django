@@ -101,3 +101,7 @@ ENV/
 # secrets
 pat_token.py
 webhook_secret.py
+
+# settings
+/regulateMCS/regulateMCS/settings.py
+/hooks/hooks/settings.py
